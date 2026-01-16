@@ -27,7 +27,7 @@ use crate::trading::{CopyEngine, StrategyConfig, TradingConfig};
 #[command(about = "Copy trades from successful Polymarket traders", long_about = None)]
 struct Cli {
     /// Database file path
-    #[arg(short, long, default_value = "sqlite:polycopier.db")]
+    #[arg(short, long, default_value = "sqlite:./polycopier.db?mode=rwc")]
     database: String,
 
     /// Log level (trace, debug, info, warn, error)
@@ -336,11 +336,11 @@ async fn main() -> Result<()> {
             println!("  Slippage Tolerance:   {}%", config.slippage_tolerance * Decimal::from(100));
 
             println!("\nTrader Requirements:");
-            println!("  Min Win Rate:         {}%", config.min_win_rate * 100.0);
+            println!("  Min Win Rate:         {:.0}%", config.min_win_rate * 100.0);
             println!("  Min Trades:           {}", config.min_trades);
             println!("  Min Profit:           ${}", config.min_profit);
-            println!("  Max Trader MDD:       {}%", config.max_trader_mdd * 100.0);
-            println!("  Min Sharpe:           {}", config.min_sharpe);
+            println!("  Max Trader MDD:       {:.0}%", config.max_trader_mdd * 100.0);
+            println!("  Min Sharpe:           {:.1}", config.min_sharpe);
 
             println!("\n=== Strategy Configuration ===\n");
             println!("Entry Rules:");
