@@ -4,21 +4,22 @@
 //! MDD, Sharpe ratio, and other performance metrics.
 
 mod api;
+mod bot;
 mod db;
 mod metrics;
 mod models;
 mod trading;
 
-use std::time::Duration;
-
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
 
+use crate::bot::{Bot, BotConfig};
 use crate::db::Database;
-use crate::trading::{CopyEngine, TradingConfig};
+use crate::trading::{CopyEngine, StrategyConfig, TradingConfig};
 
 /// Polymarket copy-trading bot CLI.
 #[derive(Parser)]
@@ -92,6 +93,9 @@ enum Commands {
 
     /// Show current configuration
     Config,
+
+    /// Show bot status and statistics
+    Status,
 }
 
 #[tokio::main]
@@ -276,61 +280,48 @@ async fn main() -> Result<()> {
                 "Starting copy-trading bot"
             );
 
-            // Load tracked traders
+            // Check for tracked traders first
             let addresses = db.get_tracked_addresses().await?;
             if addresses.is_empty() {
                 println!("No traders being tracked. Use 'polycopier track <address>' first.");
                 return Ok(());
             }
 
-            for addr in &addresses {
-                engine.add_trader(addr.clone()).await?;
-            }
+            // Configure the bot
+            let bot_config = BotConfig {
+                portfolio_value: Decimal::try_from(portfolio)?,
+                poll_interval_secs: interval,
+                dry_run,
+                trading_config: TradingConfig::default(),
+                strategy_config: StrategyConfig::default(),
+                database_url: cli.database.clone(),
+            };
 
-            engine
-                .set_portfolio_value(Decimal::try_from(portfolio)?)
-                .await;
+            // Create and initialize the bot
+            let mut bot = Bot::new(bot_config).await?;
+            bot.initialize().await?;
 
-            println!("Loaded {} tracked traders", addresses.len());
+            println!("\n=== Polymarket Copy-Trading Bot ===");
             println!("Portfolio value: ${}", portfolio);
             println!("Polling interval: {}s", interval);
-            println!("Dry run: {}", dry_run);
-            println!("\nStarting trade monitoring...\n");
+            println!("Mode: {}", if dry_run { "DRY RUN (no real trades)" } else { "LIVE TRADING" });
+            println!("Tracked traders: {}", addresses.len());
+            println!("\nPress Ctrl+C to stop.\n");
 
-            // Main loop
-            loop {
-                match engine.poll_for_trades().await {
-                    Ok(intents) => {
-                        for intent in intents {
-                            println!(
-                                "[{}] Copy trade: {} {} {} ${:.2} -> Our size: ${:.2}",
-                                intent.created_at.format("%H:%M:%S"),
-                                intent.source_trade.market_title,
-                                intent.source_trade.side.as_str(),
-                                intent.source_trade.outcome,
-                                intent.source_trade.amount_usdc,
-                                intent.calculated_size
-                            );
-
-                            if !dry_run {
-                                // TODO: Execute trade via CLOB client
-                                println!("  -> Would execute trade (CLOB integration pending)");
-                            } else {
-                                println!("  -> Dry run, not executing");
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        tracing::error!(error = %e, "Error polling for trades");
-                    }
-                }
-
-                tokio::time::sleep(Duration::from_secs(interval)).await;
+            // Run the bot
+            if let Err(e) = bot.run().await {
+                tracing::error!(error = %e, "Bot error");
             }
+
+            // Show final stats
+            let stats = bot.get_stats().await;
+            println!("\n{}", stats);
         }
 
         Commands::Config => {
             let config = TradingConfig::default();
+            let strategy = StrategyConfig::default();
+
             println!("\n=== Trading Configuration ===\n");
             println!("Position Sizing:");
             println!("  Method:               {}", config.sizing_method);
@@ -350,6 +341,75 @@ async fn main() -> Result<()> {
             println!("  Min Profit:           ${}", config.min_profit);
             println!("  Max Trader MDD:       {}%", config.max_trader_mdd * 100.0);
             println!("  Min Sharpe:           {}", config.min_sharpe);
+
+            println!("\n=== Strategy Configuration ===\n");
+            println!("Entry Rules:");
+            println!("  Max Trade Age:        {}s", strategy.max_trade_age_secs);
+            println!("  Min Entry Price:      {}", strategy.min_entry_price);
+            println!("  Max Entry Price:      {}", strategy.max_entry_price);
+            println!("  Max Entry Slippage:   {}%", strategy.max_entry_slippage * dec!(100));
+            println!("  Min Trader Score:     {}", strategy.min_trader_score);
+
+            println!("\nExit Rules:");
+            println!("  Take Profit:          {}%", strategy.take_profit_pct * dec!(100));
+            println!("  Stop Loss:            {}%", strategy.stop_loss_pct * dec!(100));
+            println!("  Max Holding Period:   {}h", strategy.max_holding_hours);
+            println!("  Follow Trader Exits:  {}", strategy.follow_trader_exits);
+
+            println!("\nPortfolio Risk:");
+            println!("  Max Drawdown:         {}%", strategy.max_portfolio_drawdown * dec!(100));
+            println!("  Max Positions:        {}", strategy.max_concurrent_positions);
+            println!("  Max Single Market:    {}%", strategy.max_single_market_exposure * dec!(100));
+        }
+
+        Commands::Status => {
+            // Load bot state from database
+            let bot_state = match db.get_bot_state().await {
+                Ok(state) => state,
+                Err(_) => {
+                    println!("No bot session found. Run 'polycopier run' to start the bot.");
+                    return Ok(());
+                }
+            };
+
+            let (total, executed, failed) = db.get_copy_trade_stats().await.unwrap_or((0, 0, 0));
+            let max_dd = db.calculate_max_drawdown().await.unwrap_or(0.0);
+            let addresses = db.get_tracked_addresses().await?;
+            let positions = db.get_open_positions().await?;
+
+            println!("\n=== Bot Status ===");
+            println!("Running:          {}", if bot_state.is_running { "Yes" } else { "No" });
+            println!("Started:          {}", bot_state.started_at);
+            println!("Last Poll:        {}", bot_state.last_poll_at.unwrap_or_else(|| "Never".to_string()));
+
+            println!("\n=== Portfolio ===");
+            println!("Value:            ${:.2}", bot_state.portfolio_value);
+            println!("Exposure:         ${:.2}", bot_state.current_exposure);
+            println!("Total P&L:        ${:.2}", bot_state.total_pnl);
+            println!("Max Drawdown:     {:.2}%", max_dd * 100.0);
+
+            println!("\n=== Trading ===");
+            println!("Tracked Traders:  {}", addresses.len());
+            println!("Open Positions:   {}", positions.len());
+            println!("Total Trades:     {}", total);
+            println!("Executed:         {}", executed);
+            println!("Failed:           {}", failed);
+
+            if !positions.is_empty() {
+                println!("\n=== Open Positions ===");
+                for pos in &positions {
+                    let pnl_sign = if pos.unrealized_pnl >= 0.0 { "+" } else { "" };
+                    println!(
+                        "  {} {} @ {:.3} -> {:.3} ({}${:.2})",
+                        truncate(&pos.market_id, 20),
+                        pos.outcome,
+                        pos.entry_price,
+                        pos.current_price,
+                        pnl_sign,
+                        pos.unrealized_pnl
+                    );
+                }
+            }
         }
     }
 

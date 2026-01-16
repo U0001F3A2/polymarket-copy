@@ -40,7 +40,7 @@ statrs = "0.18"
 chrono = { version = "0.4", features = ["serde"] }
 
 # Database (SQLite for simplicity)
-sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "chrono"] }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "chrono", "derive"] }
 
 # Retry logic
 backoff = { version = "0.4", features = ["tokio"] }
@@ -48,6 +48,17 @@ backoff = { version = "0.4", features = ["tokio"] }
 # Decimal arithmetic for financial calculations
 rust_decimal = { version = "1.36", features = ["serde", "serde-with-str"] }
 rust_decimal_macros = "1.36"
+
+# Ethereum signing for CLOB orders
+alloy-primitives = { version = "0.8", features = ["serde"] }
+alloy-signer = "0.6"
+alloy-signer-local = "0.6"
+
+# Hex encoding
+hex = "0.4"
+
+# UUID for order IDs and nonces
+uuid = { version = "1.11", features = ["v4"] }
 
 [dev-dependencies]
 tokio-test = "0.4"
