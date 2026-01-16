@@ -287,6 +287,7 @@ impl Bot {
             None, // Would fetch trader metrics here
             &portfolio,
             &market_positions,
+            None, // Live trading uses current time
         );
 
         if !validation.allowed {

@@ -427,7 +427,7 @@ impl Backtester {
                 exposure,
             );
 
-            // Validate entry
+            // Validate entry (pass trade timestamp as reference time for backtesting)
             let validation = self.strategy.validate_entry(
                 trade.timestamp,
                 trade.price,
@@ -436,6 +436,7 @@ impl Backtester {
                 None,
                 &portfolio,
                 &market_positions,
+                Some(trade.timestamp), // Use trade time as "now" for backtesting
             );
 
             if !validation.allowed {
@@ -802,7 +803,7 @@ impl PaperTrader {
             exposure,
         );
 
-        // Validate
+        // Validate (paper trading uses real-time, so pass None)
         let validation = self.strategy.validate_entry(
             trade.timestamp,
             current_price,
@@ -811,6 +812,7 @@ impl PaperTrader {
             None,
             &portfolio,
             &[],
+            None, // Use current time for paper trading
         );
 
         if !validation.allowed {

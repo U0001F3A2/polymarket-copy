@@ -233,6 +233,9 @@ impl Strategy {
     // ==================== Entry Validation ====================
 
     /// Validate whether we should enter a position.
+    ///
+    /// `reference_time` is used for calculating trade age. Pass `None` for live trading
+    /// (uses current time), or pass a simulated time for backtesting.
     pub fn validate_entry(
         &self,
         source_trade_time: DateTime<Utc>,
@@ -242,9 +245,11 @@ impl Strategy {
         trader_metrics: Option<&TraderMetrics>,
         portfolio: &PortfolioState,
         market_positions: &[StrategyPosition],
+        reference_time: Option<DateTime<Utc>>,
     ) -> EntryValidation {
-        // Check trade age
-        let trade_age = Utc::now() - source_trade_time;
+        // Check trade age (skip for backtesting when reference_time equals trade time)
+        let now = reference_time.unwrap_or_else(Utc::now);
+        let trade_age = now - source_trade_time;
         if trade_age.num_seconds() > self.config.max_trade_age_secs {
             return EntryValidation::deny(format!(
                 "Trade too old: {}s > {}s",
@@ -653,6 +658,7 @@ mod tests {
             None,
             &portfolio,
             &[],
+            None,
         );
         assert!(!result.allowed);
         assert!(result.reason.contains("too low"));
@@ -666,6 +672,7 @@ mod tests {
             None,
             &portfolio,
             &[],
+            None,
         );
         assert!(!result.allowed);
         assert!(result.reason.contains("too high"));
@@ -679,6 +686,7 @@ mod tests {
             None,
             &portfolio,
             &[],
+            None,
         );
         assert!(result.allowed);
     }
@@ -697,6 +705,7 @@ mod tests {
             None,
             &portfolio,
             &[],
+            None,
         );
         assert!(!result.allowed);
         assert!(result.reason.contains("too old"));
