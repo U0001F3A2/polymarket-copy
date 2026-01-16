@@ -273,6 +273,16 @@ impl CopyEngine {
             avg_trader_sharpe: avg_sharpe,
         }
     }
+
+    /// Get recent trades for a trader.
+    pub async fn get_trader_trades(
+        &self,
+        address: &str,
+        limit: Option<u32>,
+        cursor: Option<&str>,
+    ) -> Result<Vec<Trade>> {
+        self.data_client.get_trades(address, limit, cursor).await
+    }
 }
 
 /// Engine statistics.
