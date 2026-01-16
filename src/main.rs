@@ -124,6 +124,10 @@ enum Commands {
         /// Backtest all tracked traders
         #[arg(long)]
         all: bool,
+
+        /// Use relaxed strategy parameters (wider price bounds, higher drawdown limit)
+        #[arg(long)]
+        relaxed: bool,
     },
 
     /// Start paper trading (simulated live trading)
@@ -467,20 +471,35 @@ async fn main() -> Result<()> {
             slippage,
             fee,
             all,
+            relaxed,
         } => {
             info!(
                 capital = capital,
                 lookback = lookback,
                 slippage = slippage,
                 fee = fee,
+                relaxed = relaxed,
                 "Starting backtest"
             );
+
+            // Build strategy config (relaxed mode widens filters)
+            let strategy_config = if relaxed {
+                let mut cfg = StrategyConfig::default();
+                cfg.min_entry_price = dec!(0.01);        // Allow 1%-99% prices
+                cfg.max_entry_price = dec!(0.99);
+                cfg.max_portfolio_drawdown = dec!(0.50); // Allow 50% drawdown
+                cfg.max_concurrent_positions = 50;       // Allow more positions
+                cfg.max_single_market_exposure = dec!(0.50); // Allow 50% per market
+                cfg
+            } else {
+                StrategyConfig::default()
+            };
 
             // Build backtest config
             let backtest_config = BacktestConfig {
                 initial_capital: Decimal::try_from(capital)?,
                 trading_config: TradingConfig::default(),
-                strategy_config: StrategyConfig::default(),
+                strategy_config,
                 slippage: Decimal::try_from(slippage / 100.0)?,
                 fee_rate: Decimal::try_from(fee / 100.0)?,
                 lookback_trades: lookback,
