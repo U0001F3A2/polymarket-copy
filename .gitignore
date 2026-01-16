@@ -1,0 +1,43 @@
+# Build artifacts
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# Database
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# Environment / Secrets
+.env
+.env.local
+*.pem
+*.key
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Python artifacts (from initial setup)
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+pyproject.toml
+src/polymarket_copier/
